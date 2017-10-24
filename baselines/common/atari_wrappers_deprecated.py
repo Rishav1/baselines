@@ -1,6 +1,6 @@
-import cv2
 import gym
 import numpy as np
+import scipy as sp
 
 from collections import deque
 from gym import spaces
@@ -137,8 +137,8 @@ class ProcessFrame84(gym.ObservationWrapper):
         else:
             assert False, "Unknown resolution."
         img = img[:, :, 0] * 0.299 + img[:, :, 1] * 0.587 + img[:, :, 2] * 0.114
-        resized_screen = cv2.resize(img, (84, 110), interpolation=cv2.INTER_AREA)
-        x_t = resized_screen[18:102, :]
+        resized_screen = sp.misc.imresize(img, (84, 110), interp='bilinear')
+        x_t = resized_screen[:, 18:102]
         x_t = np.reshape(x_t, [84, 84, 1])
         return x_t.astype(np.uint8)
 
@@ -234,6 +234,5 @@ class A2cProcessFrame(gym.Wrapper):
 
     @staticmethod
     def process(frame):
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-        frame = cv2.resize(frame, (84, 84), interpolation=cv2.INTER_AREA)
+        frame = sp.misc.resize(frame, (84, 48), interp='bilinear', mode='L')
         return frame.reshape(84, 84, 1)
