@@ -96,6 +96,18 @@ The functions in this file can are used to create the following functions:
 import tensorflow as tf
 import baselines.common.tf_util as U
 
+def variable_summaries(var):
+    """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
+    with tf.name_scope(var.name.split("/")[-1].split(":")[0]):
+        with tf.name_scope('summaries'):
+            mean = tf.reduce_mean(var)
+            tf.summary.scalar('mean', mean)
+            with tf.name_scope('stddev'):
+                stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
+            tf.summary.scalar('stddev', stddev)
+            tf.summary.scalar('max', tf.reduce_max(var))
+            tf.summary.scalar('min', tf.reduce_min(var))
+            tf.summary.histogram('histogram', var)
 
 def default_param_noise_filter(var):
     if var not in tf.trainable_variables():
@@ -347,9 +359,14 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
         clone_returns_ph = tf.placeholder(tf.float32, [num_clones], name="clone_returns")
 
         group_best_return = tf.get_variable("group_best_return", (), initializer=tf.constant_initializer(float('-inf')))
+        tf.summary.scalar("group_best_return", group_best_return)
         obs_dummy_input = U.ensure_tf_input(make_obs_ph("obs_dummy"))
         group_best_q_func = q_func(obs_dummy_input.get(), num_actions, scope="group_best_q_func")
         group_best_q_func_vars = U.scope_vars(U.absolute_scope_name("group_best_q_func"))
+
+        with tf.name_scope("Group_best_network"):
+            for q_var in sorted(group_best_q_func_vars, key=lambda v: v.name):
+                variable_summaries(q_var)
 
         update_clone_best_expr = []
         update_group_best_expr = []
@@ -383,9 +400,17 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                 q_t = q_func(obs_t_input.get(), num_actions, scope="q_func")  # reuse parameters from act
                 q_func_vars = U.scope_vars(U.absolute_scope_name("q_func"))
 
+                with tf.name_scope("Live_Network"):
+                    for q_var in sorted(q_func_vars, key=lambda v: v.name):
+                        variable_summaries(q_var)
+
                 # target q network evalution
                 q_tp1 = q_func(obs_tp1_input.get(), num_actions, scope="target_q_func", reuse=True)
                 target_q_func_vars = U.scope_vars(U.absolute_scope_name("target_q_func"))
+
+                with tf.name_scope("Target_Network"):
+                    for target_q_var in sorted(target_q_func_vars, key=lambda v: v.name):
+                        variable_summaries(target_q_var)
 
                 # q scores for actions which we know were selected in the given state.
                 q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
@@ -407,6 +432,9 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                 errors = U.huber_loss(td_error)
                 weighted_error = tf.reduce_mean(importance_weights_ph * errors)
 
+                # with tf.name_scope("TD_error"):
+                #     tf.summary.scalar(td_error.name, td_error)
+
                 # compute optimization op (potentially with gradient clipping)
                 if grad_norm_clipping is not None:
                     optimize_expr = U.minimize_and_clip(optimizer,
@@ -423,6 +451,8 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                     update_target_expr.append(var_target.assign(var))
                 update_target_expr = tf.group(*update_target_expr)
 
+                # merged = tf.summary.merge_all()
+
                 # Create callable functions
                 train = U.function(
                     inputs=[
@@ -433,7 +463,7 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                         done_mask_ph,
                         importance_weights_ph
                     ],
-                    outputs=td_error,
+                    outputs=[td_error],
                     updates=[optimize_expr]
                 )
                 update_target = U.function([], [], updates=[update_target_expr])
@@ -443,11 +473,21 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                 # Velocity variable and best q_func variable of clones
                 velocity_q_func = q_func(obs_t_input.get(), num_actions, scope="velocity_q_func")
                 velocity_q_func_vars = U.scope_vars(U.absolute_scope_name("velocity_q_func"))
+
+                with tf.name_scope("Velocity_network"):
+                    for q_var in sorted(velocity_q_func_vars, key=lambda v: v.name):
+                        variable_summaries(q_var)
+
                 clone_best_q_func = q_func(obs_t_input.get(), num_actions, scope="clone_best_q_func")
                 clone_best_q_func_vars = U.scope_vars(U.absolute_scope_name("clone_best_q_func"))
 
+                with tf.name_scope("Clone_best_network"):
+                    for q_var in sorted(clone_best_q_func_vars, key=lambda v: v.name):
+                        variable_summaries(q_var)
+
                 clone_best_return = tf.get_variable("clone_best_return", (),
                                                     initializer=tf.constant_initializer(float('-inf')))
+                tf.summary.scalar("clone_best_return", clone_best_return)
                 clone_best_returns.append(clone_best_return)
 
                 #PSO that updates the target network
@@ -477,12 +517,14 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                                sorted(clone_best_q_func_vars, key=lambda v: v.name),
                                sorted(group_best_q_func_vars, key=lambda v: v.name),
                                sorted(target_q_func_vars, key=lambda v: v.name)):
-                    update_clone_velocity_expr.append(velocity_var.assign(
-                        tf.add_n([tf.multiply(inertia, velocity_var),
-                                  tf.multiply(cognitive, tf.multiply(tf.random_uniform([], 0, 1),
-                                                                     tf.subtract(clone_best_q_var, target_q_var))),
-                                  tf.multiply(social, tf.multiply(tf.random_uniform([], 0, 1),
-                                                                  tf.subtract(group_best_q_var, target_q_var)))])))
+                    cognitive_random = tf.random_uniform([], 0, cognitive)
+                    social_random = tf.random_uniform([], 0, social)
+                    clone_best_difference = tf.subtract(clone_best_q_var, target_q_var)
+                    group_best_difference = tf.subtract(group_best_q_var, target_q_var)
+                    new_velocity_var = tf.add_n([tf.multiply(inertia, velocity_var),
+                                                 tf.multiply(cognitive_random, clone_best_difference),
+                                                 tf.multiply(social_random, group_best_difference)])
+                    update_clone_velocity_expr.append(velocity_var.assign(new_velocity_var))
 
                 for target_q_var, velocity_var in zip(sorted(target_q_func_vars, key=lambda v: v.name),
                                                       sorted(velocity_q_func_vars, key=lambda v: v.name)):
@@ -540,11 +582,14 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
         update_clone_velocity_expr = tf.group(*update_clone_velocity_expr)
         update_clone_q_expr = tf.group(*update_clone_q_expr)
 
+        merged = tf.summary.merge_all()
+
         pso_update = U.function(
             inputs=[clone_returns_ph],
-            outputs=[{"group_best": group_best_return,
-                      "clone_best": clone_best_returns,
-                      "group_best_q_func_vars": group_best_q_func_vars}],
+            outputs=[merged,
+                     group_best_return,
+                     clone_best_returns,
+                     group_best_q_func_vars],
             updates=[update_clone_best_expr,
                      update_group_best_expr,
                      update_clone_velocity_expr,

@@ -39,16 +39,19 @@ if __name__ == '__main__':
             q_func=model,
             num_actions=envs[0].action_space.n,
             optimizer=tf.train.AdamOptimizer(learning_rate=5e-4),
-            inertia=float(0.729),
-            social=float(2.05),
-            cognitive=float(2.05),
+            inertia=float(0.725),
+            social=float(0.2),
+            cognitive=float(0.2),
             num_clones=args.num_clones,
         )
         # Create the replay buffer
         replay_buffers = [ReplayBuffer(50000) for clone in range(args.num_clones)]
         # Create the schedule for exploration starting from 1 (every action is random) down to
         # 0.02 (98% of actions are selected according to values predicted by the model).
-        exploration = LinearSchedule(schedule_timesteps=10000, initial_p=1.0, final_p=0.02)
+        exploration = LinearSchedule(schedule_timesteps=1000, initial_p=1, final_p=0.02)
+
+        #create the summary writer
+        summary_writer = tf.summary.FileWriter('/tmp/train', U.get_session().graph)
 
         # Initialize the parameters and copy them to the target network.
         U.initialize()
@@ -78,26 +81,27 @@ if __name__ == '__main__':
                 if is_solved:
                     # Show off the result
                     envs[clone].render()
-                # else:
-                #     # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
-                #     if t > 1000:
-                #         obses_t, actions, rewards, obses_tp1, dones = replay_buffers[clone].sample(32)
-                #         train_clones[clone](obses_t, actions, rewards, obses_tp1, dones, np.ones_like(rewards))
-                #     # Update target network periodically.
-                #     if t % 1000 == 0:
-                #         update_target_clones[clone]()
+                else:
+                    # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
+                    if t > 200:
+                        obses_t, actions, rewards, obses_tp1, dones = replay_buffers[clone].sample(32)
+                        train_clones[clone](obses_t, actions, rewards, obses_tp1, dones, np.ones_like(rewards))
+                    # Update target network periodically.
+                    if t % 200 == 0 and (t / 200) % 2 == 1:
+                        update_target_clones[clone]()
 
                 # if done and len(episode_rewards[clone]) % 10 == 0:
                 #     logger.record_tabular("clone id", clone)
                 #     logger.record_tabular("steps", t)
                 #     logger.record_tabular("episodes", len(episode_rewards[clone]))
-                #     logger.record_tabular("mean episode reward", round(np.mean(episode_rewards[clone][-101:-1]), 1))
+                #     logger.record_tabular("mean episode reward", round(np.mean(episode_rewards[clone][-5:-1]), 1))
                 #     logger.record_tabular("% time spent exploring", int(100 * exploration.value(t)))
                 #     logger.dump_tabular()
 
-            if t % 100 == 0 and t != 0:
-                last_returns = [np.mean(episode_reward[-101:-1]) for episode_reward in episode_rewards]
-                (pso_info,) = pso_update(last_returns)
+            if t % 200 == 0 and t != 0 and (t / 200) % 2 == 0:
+                last_returns = [np.mean(episode_reward[-5:-1]) for episode_reward in episode_rewards]
+                merged, group_best_return, clone_best_returns, group_best_q_func_vars = pso_update(last_returns)
+                summary_writer.add_summary(merged,t)
                 logger.log("Last Reward {}".format(['%.2f' % return_ for return_ in last_returns]))
-                logger.log("Clone Best Rewards {}".format(['%.2f' % return_ for return_ in pso_info["clone_best"]]))
+                # logger.log("Clone Best Rewards {}".format(['%.2f' % return_ for return_ in clone_best_returns]))
                 # logger.dump_tabular()
