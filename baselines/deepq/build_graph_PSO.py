@@ -373,6 +373,7 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
         update_clone_velocity_expr = []
         update_clone_q_expr = []
         clone_best_returns = []
+        update_live_expr = []
 
         inertia = tf.fill([], inertia, "inertia")
         cognitive = tf.fill([], cognitive, "cognitive")
@@ -570,7 +571,9 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
                 #                                       sorted(velocity_q_func_vars, key=lambda v: v.name)):
                 #     update_clone_q_expr.append(q_var.assign(tf.add(q_var, velocity_var)))
 
-
+                for var, var_target in zip(sorted(q_func_vars, key=lambda v: v.name),
+                                           sorted(target_q_func_vars, key=lambda v: v.name)):
+                    update_live_expr.append(var.assign(var_target))
 
                 act_f_clones.append(act_f)
                 train_clones.append(train)
@@ -581,6 +584,7 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
         update_group_best_expr = tf.group(*update_group_best_expr)
         update_clone_velocity_expr = tf.group(*update_clone_velocity_expr)
         update_clone_q_expr = tf.group(*update_clone_q_expr)
+        update_live_expr = tf.group(*update_live_expr)
 
         merged = tf.summary.merge_all()
 
@@ -593,7 +597,8 @@ def build_train_PSO(make_obs_ph, q_func, num_actions, optimizer, num_clones, ine
             updates=[update_clone_best_expr,
                      update_group_best_expr,
                      update_clone_velocity_expr,
-                     update_clone_q_expr]
+                     update_clone_q_expr,
+                     update_live_expr]
         )
 
         return act_f_clones, train_clones, update_target_clones, q_value_clones, pso_update
