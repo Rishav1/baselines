@@ -148,7 +148,7 @@ if __name__ == '__main__':
             def model_wrapper(img_in, num_actions, scope, **kwargs):
                 actual_model = dueling_model if args.dueling else model
                 return actual_model(img_in, num_actions, scope, layer_norm=args.layer_norm, **kwargs)
-            act_f_clones, train_clones, update_target_clones, debug_clones, pso_update = deepq.build_train_PSO(
+            act_f_clones, train_clones, update_target_clones, debug_clones, pso_update = deepq.build_graph_PSO.build_train_PSO(
                 make_obs_ph=lambda name: U.Uint8Input(env.observation_space.shape, name=name),
                 q_func=model_wrapper,
                 num_actions=env.action_space.n,

@@ -96,18 +96,21 @@ The functions in this file can are used to create the following functions:
 import tensorflow as tf
 import baselines.common.tf_util as U
 
+
 def variable_summaries(var):
     """Attach a lot of summaries to a Tensor (for TensorBoard visualization)."""
     with tf.name_scope(var.name.split("/")[-1].split(":")[0]):
         with tf.name_scope('summaries'):
             mean = tf.reduce_mean(var)
-            tf.summary.scalar('mean', mean)
+            mean_summary = tf.summary.scalar('mean', mean)
             with tf.name_scope('stddev'):
                 stddev = tf.sqrt(tf.reduce_mean(tf.square(var - mean)))
-            tf.summary.scalar('stddev', stddev)
-            tf.summary.scalar('max', tf.reduce_max(var))
-            tf.summary.scalar('min', tf.reduce_min(var))
-            tf.summary.histogram('histogram', var)
+            std_summary = tf.summary.scalar('stddev', stddev)
+            max_summary = tf.summary.scalar('max', tf.reduce_max(var))
+            min_summary = tf.summary.scalar('min', tf.reduce_min(var))
+            hist_summary = tf.summary.histogram('histogram', var)
+            return [mean_summary, std_summary, max_summary, min_summary, hist_summary]
+
 
 def default_param_noise_filter(var):
     if var not in tf.trainable_variables():
@@ -122,6 +125,7 @@ def default_param_noise_filter(var):
     # we use them for normalization purposes). If you change your network, you will likely want
     # to re-consider which layers to perturb and which to keep untouched.
     return False
+
 
 def set_cover(subsets, agent_ph):
     """Find a family of subsets that covers the universal set"""
@@ -177,31 +181,29 @@ def set_cover(subsets, agent_ph):
 #
 #     return tf.cast(tf.argmax(tf.multiply(loop, cut), axis=1), tf.int32)
 
-    # print([tf.shape(subsets)[0]] + [tf.shape(subsets)[2]])
-    #
-    # covered = tf.ones(tf.shape(subsets)[0:3:2], tf.int32)
-    # cover = tf.zeros(tf.shape(subsets)[0:2], tf.int32)
-    # s = tf.zeros(tf.shape(subsets)[0:2], tf.int32)
-    # # Greedily add the subsets with the most uncovered points
-    #
-    # def body(cover, covered):
-    #     s = tf.one_hot(tf.argmax(tf.reduce_sum(subsets * covered), axis=2), tf.shape(subsets)[1], dtype=tf.int32)
-    #     cover = cover + s
-    #     covered = covered - tf.reduce_sum(s * subsets, axis=2)
-    #     return cover, covered
-    #
-    # def cond(cover,covered):
-    #     return tf.not_equal(tf.reduce_sum(covered * universe), tf.zeros((), tf.int32))
-    #
-    # loop = tf.while_loop(
-    #     cond,
-    #     body,
-    #     [cover, covered],
-    # )
-    #
-    # return loop[0] * (tf.reduce_sum(subsets * agent_ph.get(), axis=1))
-
-
+# print([tf.shape(subsets)[0]] + [tf.shape(subsets)[2]])
+#
+# covered = tf.ones(tf.shape(subsets)[0:3:2], tf.int32)
+# cover = tf.zeros(tf.shape(subsets)[0:2], tf.int32)
+# s = tf.zeros(tf.shape(subsets)[0:2], tf.int32)
+# # Greedily add the subsets with the most uncovered points
+#
+# def body(cover, covered):
+#     s = tf.one_hot(tf.argmax(tf.reduce_sum(subsets * covered), axis=2), tf.shape(subsets)[1], dtype=tf.int32)
+#     cover = cover + s
+#     covered = covered - tf.reduce_sum(s * subsets, axis=2)
+#     return cover, covered
+#
+# def cond(cover,covered):
+#     return tf.not_equal(tf.reduce_sum(covered * universe), tf.zeros((), tf.int32))
+#
+# loop = tf.while_loop(
+#     cond,
+#     body,
+#     [cover, covered],
+# )
+#
+# return loop[0] * (tf.reduce_sum(subsets * agent_ph.get(), axis=1))
 
 def build_act(make_obs_ph, q_func, num_actions, num_clones, scope="deepq", reuse=None):
     """Creates the act function:
@@ -264,6 +266,13 @@ def build_act(make_obs_ph, q_func, num_actions, num_clones, scope="deepq", reuse
 
         cover_agents = tf.gather_nd(tf.transpose(clone_actions, [0, 2, 1]), indexes)
 
+        act_summary = [tf.summary.tensor_summary("act_agent", agent_ph),
+                       tf.summary.tensor_summary("act_table", clone_actions),
+                       tf.summary.tensor_summary("act_action", deterministic_actions),
+                       tf.summary.tensor_summary("act_cover", cover_agents),
+                       tf.summary.tensor_summary("act_EPSILON", eps)]
+        summary_ops = tf.summary.merge(act_summary)
+
         # deterministic_actions = tf.argmax(q_values_online, axis=1)
 
         batch_size = tf.shape(observations_ph.get())[0]
@@ -274,13 +283,15 @@ def build_act(make_obs_ph, q_func, num_actions, num_clones, scope="deepq", reuse
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
         act = U.function(inputs=[observations_ph, agent_ph, stochastic_ph, update_eps_ph],
-                         outputs=[output_actions, cover_agents],
+                         outputs=[output_actions, cover_agents, summary_ops],
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])
         return act
 
 
-def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None, param_noise_filter_func=None):
+# TODO: Update parameter pertubation for swarm act.
+def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", reuse=None,
+                               param_noise_filter_func=None):
     """Creates the act function with support for parameter space noise exploration (https://arxiv.org/abs/1706.01905):
 
     Parameters
@@ -325,14 +336,17 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         reset_ph = tf.placeholder(tf.bool, (), name="reset")
 
         eps = tf.get_variable("eps", (), initializer=tf.constant_initializer(0))
-        param_noise_scale = tf.get_variable("param_noise_scale", (), initializer=tf.constant_initializer(0.01), trainable=False)
-        param_noise_threshold = tf.get_variable("param_noise_threshold", (), initializer=tf.constant_initializer(0.05), trainable=False)
+        param_noise_scale = tf.get_variable("param_noise_scale", (), initializer=tf.constant_initializer(0.01),
+                                            trainable=False)
+        param_noise_threshold = tf.get_variable("param_noise_threshold", (), initializer=tf.constant_initializer(0.05),
+                                                trainable=False)
 
         # Unmodified Q.
         q_values = q_func(observations_ph.get(), num_actions, scope="q_func")
 
         # Perturbable Q used for the actual rollout.
         q_values_perturbed = q_func(observations_ph.get(), num_actions, scope="perturbed_q_func")
+
         # We have to wrap this code into a function due to the way tf.cond() works. See
         # https://stackoverflow.com/questions/37063952/confused-by-the-behavior-of-tf-cond for
         # a more detailed discussion.
@@ -344,7 +358,8 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
             for var, perturbed_var in zip(all_vars, all_perturbed_vars):
                 if param_noise_filter_func(perturbed_var):
                     # Perturb this variable.
-                    op = tf.assign(perturbed_var, var + tf.random_normal(shape=tf.shape(var), mean=0., stddev=param_noise_scale))
+                    op = tf.assign(perturbed_var,
+                                   var + tf.random_normal(shape=tf.shape(var), mean=0., stddev=param_noise_scale))
                 else:
                     # Do not perturb, just assign.
                     op = tf.assign(perturbed_var, var)
@@ -357,19 +372,23 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         # is too big, reduce scale of perturbation, otherwise increase.
         q_values_adaptive = q_func(observations_ph.get(), num_actions, scope="adaptive_q_func")
         perturb_for_adaption = perturb_vars(original_scope="q_func", perturbed_scope="adaptive_q_func")
-        kl = tf.reduce_sum(tf.nn.softmax(q_values) * (tf.log(tf.nn.softmax(q_values)) - tf.log(tf.nn.softmax(q_values_adaptive))), axis=-1)
+        kl = tf.reduce_sum(
+            tf.nn.softmax(q_values) * (tf.log(tf.nn.softmax(q_values)) - tf.log(tf.nn.softmax(q_values_adaptive))),
+            axis=-1)
         mean_kl = tf.reduce_mean(kl)
+
         def update_scale():
             with tf.control_dependencies([perturb_for_adaption]):
                 update_scale_expr = tf.cond(mean_kl < param_noise_threshold,
-                    lambda: param_noise_scale.assign(param_noise_scale * 1.01),
-                    lambda: param_noise_scale.assign(param_noise_scale / 1.01),
-                )
+                                            lambda: param_noise_scale.assign(param_noise_scale * 1.01),
+                                            lambda: param_noise_scale.assign(param_noise_scale / 1.01),
+                                            )
             return update_scale_expr
 
         # Functionality to update the threshold for parameter space noise.
         update_param_noise_threshold_expr = param_noise_threshold.assign(tf.cond(update_param_noise_threshold_ph >= 0,
-            lambda: update_param_noise_threshold_ph, lambda: param_noise_threshold))
+                                                                                 lambda: update_param_noise_threshold_ph,
+                                                                                 lambda: param_noise_threshold))
 
         # Put everything together.
         deterministic_actions = tf.argmax(q_values_perturbed, axis=1)
@@ -382,14 +401,18 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope="deepq", 
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
         updates = [
             update_eps_expr,
-            tf.cond(reset_ph, lambda: perturb_vars(original_scope="q_func", perturbed_scope="perturbed_q_func"), lambda: tf.group(*[])),
+            tf.cond(reset_ph, lambda: perturb_vars(original_scope="q_func", perturbed_scope="perturbed_q_func"),
+                    lambda: tf.group(*[])),
             tf.cond(update_param_noise_scale_ph, lambda: update_scale(), lambda: tf.Variable(0., trainable=False)),
             update_param_noise_threshold_expr,
         ]
-        act = U.function(inputs=[observations_ph, stochastic_ph, update_eps_ph, reset_ph, update_param_noise_threshold_ph, update_param_noise_scale_ph],
-                         outputs=output_actions,
-                         givens={update_eps_ph: -1.0, stochastic_ph: True, reset_ph: False, update_param_noise_threshold_ph: False, update_param_noise_scale_ph: False},
-                         updates=updates)
+        act = U.function(
+            inputs=[observations_ph, stochastic_ph, update_eps_ph, reset_ph, update_param_noise_threshold_ph,
+                    update_param_noise_scale_ph],
+            outputs=output_actions,
+            givens={update_eps_ph: -1.0, stochastic_ph: True, reset_ph: False, update_param_noise_threshold_ph: False,
+                    update_param_noise_scale_ph: False},
+            updates=updates)
         return act
 
 
@@ -450,7 +473,7 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, num_clones, grad_no
     """
     if param_noise:
         act_f = build_act_with_param_noise(make_obs_ph, q_func, num_actions, scope=scope, reuse=reuse,
-            param_noise_filter_func=param_noise_filter_func)
+                                           param_noise_filter_func=param_noise_filter_func)
     else:
         act_f = build_act(make_obs_ph, q_func, num_actions, num_clones, scope=scope, reuse=reuse)
 
@@ -461,11 +484,15 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, num_clones, grad_no
         rew_t_ph = tf.placeholder(tf.float32, [None], name="reward")
         obs_tp1_input = U.ensure_tf_input(make_obs_ph("obs_tp1"))
         done_mask_ph = tf.placeholder(tf.float32, [None], name="done")
-        shared_agents_ph = tf.placeholder(tf.float32, (num_clones, None), name="shared")
+        shared_agents_ph = tf.placeholder(tf.int32, (num_clones, None), name="shared")
         importance_weights_ph = tf.placeholder(tf.float32, [None], name="weight")
 
         select_optimizer = []
         update_target_expr = []
+
+        train_summary = [tf.summary.tensor_summary("train_cover", shared_agents_ph)
+                         ]
+        debug_summary = []
 
         for clone in range(num_clones):
             clone_scope = "clone{}".format(clone)
@@ -481,6 +508,15 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, num_clones, grad_no
                 # q scores for actions which we know were selected in the given state.
                 q_t_selected = tf.reduce_sum(q_t * tf.one_hot(act_t_ph, num_actions), 1)
 
+                # add the summaries
+                with tf.name_scope("Live_Network"):
+                    for q_var in sorted(q_func_vars, key=lambda v: v.name):
+                        train_summary.append(variable_summaries(q_var))
+
+                with tf.name_scope("Target_Network"):
+                    for target_q_var in sorted(target_q_func_vars, key=lambda v: v.name):
+                        train_summary.append(variable_summaries(target_q_var))
+
                 # compute estimate of best possible value starting from state at t + 1
                 if double_q:
                     q_tp1_using_online_net = q_func(obs_tp1_input.get(), num_actions, scope="q_func", reuse=True)
@@ -494,9 +530,15 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, num_clones, grad_no
                 q_t_selected_target = rew_t_ph + gamma * q_tp1_best_masked
 
                 # compute the error (potentially clipped)
-                td_error = shared_agents_ph[clone] * (q_t_selected - tf.stop_gradient(q_t_selected_target))
+                td_error = q_t_selected - tf.stop_gradient(q_t_selected_target)
                 errors = U.huber_loss(td_error)
-                weighted_error = tf.reduce_mean(importance_weights_ph * errors)
+                boolean_filter = tf.cast(shared_agents_ph[clone], tf.bool)
+                filtered_errors = tf.boolean_mask(importance_weights_ph * errors, boolean_filter)
+                weighted_error = tf.reduce_mean(filtered_errors)
+
+                debug_summary.append(tf.summary.tensor_summary("debug_" + clone_scope + "_filter", shared_agents_ph[clone]))
+                debug_summary.append(tf.summary.tensor_summary("debug_" + clone_scope + "_filtered_errors", filtered_errors))
+                debug_summary.append(tf.summary.tensor_summary("debug_" + clone_scope + "_weighted_error", weighted_error))
 
                 # compute optimization op (potentially with gradient clipping)
                 if grad_norm_clipping is not None:
@@ -515,23 +557,24 @@ def build_train(make_obs_ph, q_func, num_actions, optimizer, num_clones, grad_no
                                        sorted(target_q_func_vars, key=lambda v: v.name)):
                 update_target_expr.append(var_target.assign(var))
 
-            update_target_expr = tf.group(*update_target_expr)
+        update_target_expr = tf.group(*update_target_expr)
 
-            # Create callable functions
-            train = U.function(
-                inputs=[
-                    obs_t_input,
-                    act_t_ph,
-                    rew_t_ph,
-                    obs_tp1_input,
-                    done_mask_ph,
-                    shared_agents_ph,
-                    importance_weights_ph
-                ],
-                outputs=[],
-                updates=select_optimizer
-            )
-            update_target = U.function([], [], updates=[update_target_expr])
+        summary_ops = tf.summary.merge(train_summary + debug_summary)
 
-            return act_f, train, update_target
+        # Create callable functions
+        train = U.function(
+            inputs=[
+                obs_t_input,
+                act_t_ph,
+                rew_t_ph,
+                obs_tp1_input,
+                done_mask_ph,
+                shared_agents_ph,
+                importance_weights_ph
+            ],
+            outputs=[td_error, summary_ops],
+            updates=select_optimizer
+        )
+        update_target = U.function([], [], updates=[update_target_expr])
 
+        return act_f, train, update_target
