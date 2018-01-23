@@ -50,11 +50,11 @@ if __name__ == '__main__':
 
         #create the summary writer
         if args.save_summary_dir:
-            summary_writer = tf.summary.FileWriter(args.save_summary_dir, U.get_session().graph)
-            episode_rewards_ph = tf.placeholder(tf.float64, (args.num_clones))
-            last_returns_summary_op = tf.summary.merge(
-                [tf.summary.scalar("debug_returns_clone" + str(i), tf.reduce_mean(episode_rewards_ph[i])) for i in
-                 range(args.num_clones)])
+            summary_writers = []
+            episode_rewards_ph = tf.placeholder(tf.float64, ())
+            last_returns_summary_op = tf.summary.scalar("debug_returns", tf.reduce_mean(episode_rewards_ph))
+            for clone in range(args.num_clones):
+                summary_writers.append(tf.summary.FileWriter(args.save_summary_dir+str(clone), U.get_session().graph))
 
         # Initialize the parameters and copy them to the target network.
         U.initialize()
@@ -96,14 +96,15 @@ if __name__ == '__main__':
             if t > 1000:
                 obses_t, actions, rewards, obses_tp1, dones, shares = replay_buffers.sample(32)
                 td_errors, summary_train = train(obses_t, actions, rewards, obses_tp1, dones, np.transpose(shares), np.ones_like(rewards))
-                if args.save_summary_dir:
-                    summary_writer.add_summary(summary_train, t)
+                # if args.save_summary_dir:
+                #     summary_writer.add_summary(summary_train, t)
 
             # Add mean returns to the summary
             if args.save_summary_dir and t % 50 == 0:
-                last_returns = [np.mean(episode_reward[-50:-1]) for episode_reward in episode_rewards]
-                last_returns_summary = U.get_session().run(last_returns_summary_op, {episode_rewards_ph: last_returns})
-                summary_writer.add_summary(last_returns_summary, t)
+                last_returns = [np.mean(episode_reward[-5:-1]) for episode_reward in episode_rewards]
+                for clone in range(args.num_clones):
+                    last_returns_summary = U.get_session().run(last_returns_summary_op, {episode_rewards_ph: last_returns[clone]})
+                    summary_writers[clone].add_summary(last_returns_summary, t)
 
             # Update target network periodically.
             if t % 1000 == 0 and t != 0:
