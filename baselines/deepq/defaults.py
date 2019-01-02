@@ -13,7 +13,9 @@ def atari():
         prioritized_replay_alpha=0.6,
         checkpoint_freq=10000,
         checkpoint_path=None,
-        dueling=True
+        dueling=True,
+        num_agents=10,
+        print_freq=1
     )
 
 def retro():

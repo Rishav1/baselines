@@ -102,7 +102,7 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
         from baselines.common.models import get_network_builder
         network = get_network_builder(network)(**network_kwargs)
 
-    def q_func_builder(input_placeholder, num_actions, scope, reuse=False):
+    def q_func_builder(input_placeholder, num_actions, num_agents=1, scope=None, reuse=False):
         with tf.variable_scope(scope, reuse=reuse):
             latent = network(input_placeholder)
             if isinstance(latent, tuple):
@@ -111,27 +111,33 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
                 latent = latent[0]
 
             latent = layers.flatten(latent)
+            action_scores = []
 
             with tf.variable_scope("action_value"):
-                action_out = latent
-                for hidden in hiddens:
-                    action_out = layers.fully_connected(action_out, num_outputs=hidden, activation_fn=None)
-                    if layer_norm:
-                        action_out = layers.layer_norm(action_out, center=True, scale=True)
-                    action_out = tf.nn.relu(action_out)
-                action_scores = layers.fully_connected(action_out, num_outputs=num_actions, activation_fn=None)
+                action_out = [latent] * num_agents
+                for agent in range(num_agents):
+                    for hidden in hiddens:
+                        action_out[agent] = layers.fully_connected(action_out[agent], num_outputs=hidden, activation_fn=None)
+                        if layer_norm:
+                            action_out[agent] = layers.layer_norm(action_out[agent], center=True, scale=True)
+                        action_out[agent] = tf.nn.relu(action_out[agent])
+                    action_scores.append(layers.fully_connected(action_out[agent], num_outputs=num_actions, activation_fn=None))
+            action_scores = tf.stack(action_scores, axis=1)
 
             if dueling:
+                state_score = []
                 with tf.variable_scope("state_value"):
-                    state_out = latent
-                    for hidden in hiddens:
-                        state_out = layers.fully_connected(state_out, num_outputs=hidden, activation_fn=None)
-                        if layer_norm:
-                            state_out = layers.layer_norm(state_out, center=True, scale=True)
-                        state_out = tf.nn.relu(state_out)
-                    state_score = layers.fully_connected(state_out, num_outputs=1, activation_fn=None)
-                action_scores_mean = tf.reduce_mean(action_scores, 1)
-                action_scores_centered = action_scores - tf.expand_dims(action_scores_mean, 1)
+                    state_out = [latent] * num_agents
+                    for agent in range(num_agents):
+                        for hidden in hiddens:
+                            state_out[agent] = layers.fully_connected(state_out[agent], num_outputs=hidden, activation_fn=None)
+                            if layer_norm:
+                                state_out[agent] = layers.layer_norm(state_out[agent], center=True, scale=True)
+                            state_out[agent] = tf.nn.relu(state_out[agent])
+                        state_score.append(layers.fully_connected(state_out[agent], num_outputs=1, activation_fn=None))
+                    state_score = tf.stack(state_score, axis=1)
+                action_scores_mean = tf.reduce_mean(action_scores, 2)
+                action_scores_centered = action_scores - tf.expand_dims(action_scores_mean, 2)
                 q_out = state_score + action_scores_centered
             else:
                 q_out = action_scores

@@ -18,6 +18,8 @@ from baselines.deepq.utils import ObservationInput
 
 from baselines.common.tf_util import get_session
 from baselines.deepq.models import build_q_func
+from baselines.deepq import utils
+
 
 
 class ActWrapper(object):
@@ -106,6 +108,7 @@ def learn(env,
           checkpoint_freq=10000,
           checkpoint_path=None,
           learning_starts=1000,
+          num_agents=10,
           gamma=1.0,
           target_network_update_freq=500,
           prioritized_replay=False,
@@ -116,6 +119,7 @@ def learn(env,
           param_noise=False,
           callback=None,
           load_path=None,
+          action_selector_fn="bootstrap_action_selector",
           **network_kwargs
             ):
     """Train a deepq model.
@@ -154,6 +158,8 @@ def learn(env,
         the end of the training set this variable to None.
     learning_starts: int
         how many steps of the model to collect transitions for before learning starts
+    num_agents: int
+        number of ensemble agents.
     gamma: float
         discount factor
     target_network_update_freq: int
@@ -176,6 +182,8 @@ def learn(env,
         If callback returns true training stops.
     load_path: str
         path to load the model from. (default: None)
+    action_selector_fn:  str
+        action selector function to use.
     **network_kwargs
         additional keyword arguments to pass to the network builder.
 
@@ -203,6 +211,8 @@ def learn(env,
         make_obs_ph=make_obs_ph,
         q_func=q_func,
         num_actions=env.action_space.n,
+        num_agents=num_agents,
+        action_selector_fn=getattr(utils, action_selector_fn),
         optimizer=tf.train.AdamOptimizer(learning_rate=lr),
         gamma=gamma,
         grad_norm_clipping=10,
@@ -213,6 +223,7 @@ def learn(env,
         'make_obs_ph': make_obs_ph,
         'q_func': q_func,
         'num_actions': env.action_space.n,
+        'num_agents': num_agents
     }
 
     act = ActWrapper(act, act_params)
@@ -241,6 +252,7 @@ def learn(env,
     saved_mean_reward = None
     obs = env.reset()
     reset = True
+    agent = np.random.randint(num_agents)
 
     with tempfile.TemporaryDirectory() as td:
         td = checkpoint_path or td
@@ -276,7 +288,7 @@ def learn(env,
                 kwargs['reset'] = reset
                 kwargs['update_param_noise_threshold'] = update_param_noise_threshold
                 kwargs['update_param_noise_scale'] = True
-            action = act(np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
+            action = act(agent, np.array(obs)[None], update_eps=update_eps, **kwargs)[0]
             env_action = action
             reset = False
             new_obs, rew, done, _ = env.step(env_action)
@@ -289,6 +301,7 @@ def learn(env,
                 obs = env.reset()
                 episode_rewards.append(0.0)
                 reset = True
+                agent = np.random.randint(num_agents)
 
             if t > learning_starts and t % train_freq == 0:
                 # Minimize the error in Bellman's equation on a batch sampled from replay buffer.
@@ -307,7 +320,7 @@ def learn(env,
                 # Update target network periodically.
                 update_target()
 
-            mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1)
+            mean_100ep_reward = round(np.mean(episode_rewards[-101:-1]), 1) if len(episode_rewards) > 1 else 0.
             num_episodes = len(episode_rewards)
             if done and print_freq is not None and len(episode_rewards) % print_freq == 0:
                 logger.record_tabular("steps", t)
