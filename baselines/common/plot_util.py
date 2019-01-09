@@ -205,7 +205,7 @@ def load_results(root_dir_or_dirs, enable_progress=True, enable_monitor=True, ve
 
                 if enable_monitor:
                     try:
-                        result['monitor'] = pandas.DataFrame(monitor.load_results(dirname))
+                        result['monitor'] = monitor.load_results(dirname)
                     except monitor.LoadMonitorResultsError:
                         print('skipping %s: no monitor files'%dirname)
                     except Exception as e:

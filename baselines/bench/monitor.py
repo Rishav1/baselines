@@ -157,12 +157,12 @@ def load_results(dir):
                 assert 0, 'unreachable'
             df['t'] += header['t_start']
         dfs.append(df)
-    df = pandas.concat(dfs)
-    df.sort_values('t', inplace=True)
-    df.reset_index(inplace=True)
-    df['t'] -= min(header['t_start'] for header in headers)
-    df.headers = headers # HACK to preserve backwards compatibility
-    return df
+    # df = pandas.concat(dfs)
+    # df.sort_values('t', inplace=True)
+    # df.reset_index(inplace=True)
+    # df['t'] -= min(header['t_start'] for header in headers)
+    # df.headers = headers # HACK to preserve backwards compatibility
+    return dfs
 
 def test_monitor():
     env = gym.make("CartPole-v1")

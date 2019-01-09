@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg') # Can change to 'Agg' for non-interactive mode
+import copy
 
 import matplotlib.pyplot as plt
 plt.rcParams['svg.fonttype'] = 'none'
@@ -68,7 +69,14 @@ def split_by_task(taskpath):
 
 def plot_results(dirs, num_timesteps=10e6, xaxis=X_TIMESTEPS, yaxis=Y_REWARD, title='', split_fn=split_by_task, resample=100):
     results = plot_util.load_results(dirs)
-    plot_util.plot_results(results, xy_fn=lambda r: ts2xy(r.monitor, xaxis, yaxis), group_fn=split_fn, average_group=True, resample=resample)
+    new_results = []
+    for result in results:
+        dfs = result.monitor
+        for df in dfs:
+            temp_result = copy.deepcopy(result)
+            temp_result = temp_result._replace(monitor=df)
+            new_results.append(temp_result)
+    plot_util.plot_results(new_results, xy_fn=lambda r: ts2xy(r.monitor, xaxis, yaxis), group_fn=split_fn, average_group=True, resample=resample)
 
 # Example usage in jupyter-notebook
 # from baselines.results_plotter import plot_results
@@ -94,7 +102,6 @@ def main():
     for algortithm in algortithms:
         if not os.path.isdir(os.path.join(root, algortithm, args.env)):
             continue
-
         dirs.append(os.path.join(root, algortithm, args.env))
 
     plot_results(dirs, args.num_timesteps, args.xaxis, args.yaxis, args.env, split_fn=split_by_task, resample=args.resample)
