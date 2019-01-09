@@ -64,11 +64,11 @@ def plot_curves(xy_list, xaxis, yaxis, title):
 
 
 def split_by_task(taskpath):
-    return taskpath['dirname'].split('/')[-1].split('-')[0]
+    return taskpath.dirname.split('/')[-2]
 
-def plot_results(dirs, num_timesteps=10e6, xaxis=X_TIMESTEPS, yaxis=Y_REWARD, title='', split_fn=split_by_task):
+def plot_results(dirs, num_timesteps=10e6, xaxis=X_TIMESTEPS, yaxis=Y_REWARD, title='', split_fn=split_by_task, resample=100):
     results = plot_util.load_results(dirs)
-    plot_util.plot_results(results, xy_fn=lambda r: ts2xy(r['monitor'], xaxis, yaxis), split_fn=split_fn, average_group=True, resample=int(1e6))
+    plot_util.plot_results(results, xy_fn=lambda r: ts2xy(r.monitor, xaxis, yaxis), group_fn=split_fn, average_group=True, resample=resample)
 
 # Example usage in jupyter-notebook
 # from baselines.results_plotter import plot_results
@@ -80,15 +80,25 @@ def main():
     import argparse
     import os
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--dirs', help='List of log directories', nargs = '*', default=['./log'])
+    parser.add_argument('--dir', help='Log directory', type=str, default="./experiments")
+    parser.add_argument('--env', help='Name of envorinment', type=str, default="FreewayNoFrameskip-v4")
     parser.add_argument('--num_timesteps', type=int, default=int(10e6))
     parser.add_argument('--xaxis', help = 'Varible on X-axis', default = X_TIMESTEPS)
     parser.add_argument('--yaxis', help = 'Varible on Y-axis', default = Y_REWARD)
-    parser.add_argument('--task_name', help = 'Title of plot', default = 'Breakout')
+    parser.add_argument('--task_name', help = 'Title of plot', default = 'Freeway')
+    parser.add_argument('--resample', help = 'smoothening', default = 100)
     args = parser.parse_args()
-    args.dirs = [os.path.abspath(dir) for dir in args.dirs]
-    plot_results(args.dirs, args.num_timesteps, args.xaxis, args.yaxis, args.task_name)
-    plt.show()
+    args.dir = os.path.abspath(args.dir)
+    dirs = []
+    root, algortithms, _ = os.walk(args.dir).__next__()
+    for algortithm in algortithms:
+        if not os.path.isdir(os.path.join(root, algortithm, args.env)):
+            continue
+
+        dirs.append(os.path.join(root, algortithm, args.env))
+
+    plot_results(dirs, args.num_timesteps, args.xaxis, args.yaxis, args.env, split_fn=split_by_task, resample=args.resample)
+    plt.savefig("/".join([args.dir, 'plots', args.env]))
 
 if __name__ == '__main__':
     main()

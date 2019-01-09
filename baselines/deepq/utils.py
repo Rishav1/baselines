@@ -128,6 +128,7 @@ def bootstrap_action_selector(observations, q_func_online, q_func_target, agent_
         batch of action choices.
 
     """
+    q_func_target(observations)
     deterministic_actions = tf.argmax(tf.gather(q_func_online(observations), agent_ph, axis=1), 1)
     return deterministic_actions
 
