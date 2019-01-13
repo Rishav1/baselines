@@ -13,6 +13,7 @@ X_EPISODES = 'episodes'
 X_WALLTIME = 'walltime_hrs'
 Y_REWARD = 'reward'
 Y_TIMESTEPS = 'timesteps'
+Y_REWARDCUMULATIVE = 'cumulative_rewards'
 POSSIBLE_X_AXES = [X_TIMESTEPS, X_EPISODES, X_WALLTIME]
 EPISODES_WINDOW = 100
 COLORS = ['blue', 'green', 'red', 'cyan', 'magenta', 'yellow', 'black', 'purple', 'pink',
@@ -42,6 +43,8 @@ def ts2xy(ts, xaxis, yaxis):
         y = ts.r.values
     elif yaxis == Y_TIMESTEPS:
         y = ts.l.values
+    elif yaxis == Y_REWARDCUMULATIVE:
+        y = np.cumsum(ts.r.values)
     else:
         raise NotImplementedError
     return x, y
@@ -94,7 +97,7 @@ def main():
     parser.add_argument('--xaxis', help = 'Varible on X-axis', default = X_TIMESTEPS)
     parser.add_argument('--yaxis', help = 'Varible on Y-axis', default = Y_REWARD)
     parser.add_argument('--task_name', help = 'Title of plot', default = 'Freeway')
-    parser.add_argument('--resample', help = 'smoothening', default = 100)
+    parser.add_argument('--resample', help = 'smoothening', type=int, default = 100)
     args = parser.parse_args()
     args.dir = os.path.abspath(args.dir)
     dirs = []
