@@ -83,6 +83,30 @@ def ccav_aggregator(action_set):
 
     return cover
 
+def ccavg_action_selector(observations, q_func_online, q_func_target, **kwargs):
+    """ CCAV voting aggregator as action selector
+    Args:
+        observations: observations tensor batch.
+        q_func_online: current q_function (could be perturbed).
+	q_func_target: target q_function.
+	kwargs: remaining arguments if passed(ignored).
+
+    Returns:
+        batch of action choices.
+
+    """
+    batch_size = tf.shape(observations)[0]
+    q_values_online = q_func_online(observations)
+    q_values_target = q_func_target(observations)
+    num_agents = tf.shape(q_values_online)[1]
+    num_actions = tf.shape(q_values_online)[2]
+
+    policy_action = tf.argmax(q_values_online, axis=2)
+    cover = tf.reduce_max(tf.one_hot(policy_action, num_actions), 1)
+
+    deterministic_actions = tf.argmax(tf.cast(cover, dtype=tf.float32) * tf.random_uniform((batch_size, num_actions)), axis=1)
+    return deterministic_actions
+
 
 def ccav_action_selector(observations, q_func_online, q_func_target, **kwargs):
     """ CCAV voting aggregator as action selector

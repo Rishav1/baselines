@@ -1,5 +1,8 @@
+import math
+
 import tensorflow as tf
 import tensorflow.contrib.layers as layers
+import baselines.common.tf_util as U
 
 
 def _mlp(hiddens, input_, num_actions, scope, reuse=False, layer_norm=False):
@@ -116,8 +119,11 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
             with tf.variable_scope("action_value"):
                 action_out = [latent] * num_agents
                 for agent in range(num_agents):
-                    for hidden in hiddens:
+                    for idx, hidden in enumerate(hiddens):
                         action_out[agent] = layers.fully_connected(action_out[agent], num_outputs=hidden, activation_fn=None)
+                        if idx == 0: # gradient normalization
+                            temp = (1 / num_agents) * action_out[agent]
+                            action_out[agent] = temp + tf.stop_gradient(action_out[agent] - temp)
                         if layer_norm:
                             action_out[agent] = layers.layer_norm(action_out[agent], center=True, scale=True)
                         action_out[agent] = tf.nn.relu(action_out[agent])
@@ -129,8 +135,11 @@ def build_q_func(network, hiddens=[256], dueling=True, layer_norm=False, **netwo
                 with tf.variable_scope("state_value"):
                     state_out = [latent] * num_agents
                     for agent in range(num_agents):
-                        for hidden in hiddens:
+                        for idx, hidden in enumerate(hiddens):
                             state_out[agent] = layers.fully_connected(state_out[agent], num_outputs=hidden, activation_fn=None)
+                            if idx == 0:  # gradient normalization
+                                temp = (1 / num_agents) * state_out[agent]
+                                state_out[agent] = temp + tf.stop_gradient(state_out[agent] - temp)
                             if layer_norm:
                                 state_out[agent] = layers.layer_norm(state_out[agent], center=True, scale=True)
                             state_out[agent] = tf.nn.relu(state_out[agent])

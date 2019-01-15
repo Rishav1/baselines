@@ -317,7 +317,7 @@ def build_act_with_param_noise(make_obs_ph, q_func, num_actions, num_agents=1, a
         q_func_target = lambda observations: q_func(observations, num_actions, num_agents, scope="target_q_func") 
 
         # Put everything together.
-        deterministic_actions = action_selector_fn(observation_ph.get(), q_func_perturbed, q_func_target, agent_ph=agent_ph)
+        deterministic_actions = action_selector_fn(observations_ph.get(), q_func_perturbed, q_func_target, agent_ph=agent_ph)
         batch_size = tf.shape(observations_ph.get())[0]
         random_actions = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=num_actions, dtype=tf.int64)
         chose_random = tf.random_uniform(tf.stack([batch_size]), minval=0, maxval=1, dtype=tf.float32) < eps
