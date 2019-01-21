@@ -203,7 +203,7 @@ def build_act(make_obs_ph, q_func, num_actions, num_agents=1, action_selector_fn
 
         output_actions = tf.cond(stochastic_ph, lambda: stochastic_actions, lambda: deterministic_actions)
         update_eps_expr = eps.assign(tf.cond(update_eps_ph >= 0, lambda: update_eps_ph, lambda: eps))
-        _act = U.function(inputs=[agent_ph, observations_ph, stochastic_ph, update_eps_ph],
+        _act = U.function(inputs=[agent_ph, observations_ph, update_eps_ph, stochastic_ph],
                          outputs=output_actions,
                          givens={update_eps_ph: -1.0, stochastic_ph: True},
                          updates=[update_eps_expr])

@@ -14,10 +14,12 @@ def atari():
         checkpoint_freq=10000,
         checkpoint_path=None,
         dueling=False,
-        num_agents=10,
+        num_agents=1,
         print_freq=1
     )
 
 def retro():
     return atari()
 
+def starcraft2():
+    return atari()

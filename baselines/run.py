@@ -50,6 +50,20 @@ _game_envs['retro'] = {
     'SpaceInvaders-Snes',
 }
 
+_game_envs['starcraft2'] = {
+    'SC2Game-v0',
+    'SC2MoveToBeacon-v0',
+    'SC2MoveToBeacon-v1',
+    'SC2CollectMineralShards-v0',
+    'SC2CollectMineralShards-v1',
+    'SC2CollectMineralShards-v2',
+    'SC2FindAndDefeatZerglings-v0',
+    'SC2DefeatRoaches-v0',
+    'SC2DefeatZerglingsAndBanelings-v0',
+    'SC2CollectMineralsAndGas-v0',
+    'SC2BuildMarines-v0',
+}
+
 
 def train(args, extra_args):
     env_type, env_id = get_env_type(args.env)
@@ -93,7 +107,7 @@ def build_env(args):
 
     env_type, env_id = get_env_type(args.env)
 
-    if env_type in {'atari', 'retro'}:
+    if env_type in {'atari', 'retro', 'starcraft2'}:
         if alg == 'deepq':
             env = make_env(env_id, env_type, seed=seed, wrapper_kwargs={'frame_stack': True})
         elif alg == 'trpo_mpi':
@@ -140,7 +154,7 @@ def get_env_type(env_id):
 
 
 def get_default_network(env_type):
-    if env_type in {'atari', 'retro'}:
+    if env_type in {'atari', 'retro', 'starcraft2'}:
         return 'cnn'
     else:
         return 'mlp'

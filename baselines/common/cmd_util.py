@@ -58,6 +58,18 @@ def make_env(env_id, env_type, subrank=0, seed=None, reward_scale=1.0, gamestate
         import retro
         gamestate = gamestate or retro.State.DEFAULT
         env = retro_wrappers.make_retro(game=env_id, max_episode_steps=10000, use_restricted_actions=retro.Actions.DISCRETE, state=gamestate)
+    elif env_type == 'starcraft2':
+        import sc2gym.envs
+        from absl import flags
+        from pysc2.lib import point_flag
+        from pysc2.env import sc2_env
+
+        FLAGS = flags.FLAGS
+        FLAGS([__file__])
+        env = gym.make(env_id)
+        env.settings['visualize'] = True
+        env.settings['agent_interface_format'] = sc2_env.parse_agent_interface_format(feature_screen=32, feature_minimap=32, rgb_screen=None,
+                                                                                      rgb_minimap=None, action_space="features", use_feature_units=False)
     else:
         env = gym.make(env_id)
 
